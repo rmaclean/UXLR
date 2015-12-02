@@ -10,6 +10,9 @@
     {
         public static int Main(string[] args)
         {
+            args = new[] { "/R", @"c:\users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\",
+                "/I", @"c:\Users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\Universal\Assets", "/IR", "/IIR",
+                "/L", @"C:\Users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\Universal\l10n\en\Resources.resw" };
             Console.WriteLine("UXLR");
             Console.WriteLine(" \"Clean up your room\" - your Mom");
             var config = new RunConfig();
@@ -50,9 +53,36 @@
                     config.LocalisationPropertiesToIgnore = args[count].Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries);
                     continue;
                 }
+
+                if (args[count].Equals("/I", StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                    config.ImageFolders = args[count].Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+                    config.CleanImages = true;
+                    continue;
+                }
+
+                if (args[count].Equals("/IE", StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                    config.ImageExtensions = args[count].Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+                    continue;
+                }
+
+                if (args[count].Equals("/IR", StringComparison.OrdinalIgnoreCase))
+                {
+                    config.ImageRecurse = true;
+                    continue;
+                }
+
+                if (args[count].Equals("/IIR", StringComparison.OrdinalIgnoreCase))
+                {
+                    config.ImageSearchInResources = true;
+                    continue;
+                }
             }
 
-            if (string.IsNullOrWhiteSpace(config.RootFolder) || (!config.CleanLocalisations && !config.CleanStyles))
+            if (string.IsNullOrWhiteSpace(config.RootFolder) || (!config.CleanLocalisations && !config.CleanStyles && !config.CleanImages))
             {
                 ShowHelp();
                 return (int)ExitCode.ShowHelp;
@@ -70,6 +100,18 @@
                 return (int)ExitCode.ShowHelp;
             }
 
+            if (config.CleanImages && (config.ImageFolders == null || config.ImageFolders.Length == 0))
+            {
+                ShowHelp();
+                return (int)ExitCode.ShowHelp;
+            }
+
+            if (config.ImageSearchInResources && (!config.CleanImages || !config.CleanLocalisations))
+            {
+                ShowHelp();
+                return (int)ExitCode.ShowHelp;
+            }
+
             try
             {
                 return Run(config);
@@ -81,56 +123,67 @@
             }
         }
 
+        private static string CommaSeperated(string[] input) => input.Aggregate((curr, next) => curr + (curr.Length > 0 ? ", " : "") + next);
+
+        private static void PrintResult(IEnumerable<SearchContent> searchPieces, SearchContentType contentType, string title, string nothingFoundMessage)
+        {
+            var resources = searchPieces.Where(_ => contentType.HasFlag(_.ContentType));
+            if (resources.Any())
+            {
+                Console.WriteLine(title);
+                foreach (var missing in resources.OrderBy(_ => _.Raw))
+                {
+                    Console.WriteLine("\t" + missing.Raw);
+                }
+            }
+            else
+            {
+                Console.WriteLine(nothingFoundMessage);
+            }
+        }
+
         private static int Run(RunConfig config)
         {
-            var searchPieces = new Collection<SearchContent>();
+            IEnumerable<SearchContent> searchPieces = new Collection<SearchContent>();
             if (config.CleanLocalisations)
             {
                 var keys = XamlKeys.Process(config.LocalisationPropertiesToIgnore, config.LocalisationResources);
-                searchPieces.Concat(keys);
+                searchPieces = searchPieces.Concat(keys);
             }
 
             if (config.CleanStyles)
             {
                 var styles = XamlStyles.Process(config.StyleResources);
-                searchPieces.Concat(styles);
+                searchPieces = searchPieces.Concat(styles);
+            }
+
+            if (config.CleanImages)
+            {
+                var images = Images.Process(config.ImageExtensions, config.ImageRecurse, config.ImageFolders);
+                searchPieces = searchPieces.Concat(images);
             }
 
             var xamlFiles = XamlFiles.FindXamlFiles(config.RootFolder);
-            XamlFiles.Search(xamlFiles, searchPieces);
+            searchPieces = XamlFiles.Search(xamlFiles, searchPieces);
+
+            if (config.ImageSearchInResources && config.CleanImages && config.CleanLocalisations)
+            {
+                searchPieces = XamlKeys.SearchLocalisationValues(config.LocalisationResources, searchPieces);
+            }
 
             if (config.CleanLocalisations)
             {
-                var resources = searchPieces.Where(_ => !_.ContentFound && _.ContentType == SearchContentType.ResourceID);
-                if (resources.Any())
-                {
-                    Console.WriteLine("Resources with not match in XAML files");
-                    foreach (var missing in resources)
-                    {
-                        Console.WriteLine(missing);
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("No used resources :)");
-                }
+                PrintResult(searchPieces, SearchContentType.ResourceID, "Resources with not match in XAML files", "No used resources :)");
             }
 
             if (config.CleanStyles)
             {
-                var styleResult = searchPieces.Where(_ => !_.ContentFound && (_.ContentType == SearchContentType.BasedOnStyle || _.ContentType == SearchContentType.StyleKey));
-                if (styleResult.Any())
-                {
-                    Console.WriteLine("Styles with no match in XAML files");
-                    foreach (var missing in styleResult)
-                    {
-                        Console.WriteLine(missing);
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("No styles resources :)");
-                }
+                PrintResult(searchPieces, SearchContentType.BasedOnStyle | SearchContentType.StyleKey, "Styles with no match in XAML files", "No used styles :)");
+            }
+
+            if (config.CleanImages)
+            {
+                PrintResult(searchPieces, SearchContentType.Image, "Images with no match in XAML files", "No used images :)");
             }
 
             if (config.Beep)
@@ -145,15 +198,19 @@
         {
             Console.WriteLine("Scans your XAML files for mess to help you clean it up.");
             Console.WriteLine();
-            Console.WriteLine("UniversalCleaner.exe /R rootDirectory [/L localisationResources] [/S styleResources] [/LI properties] [/B]");
+            Console.WriteLine("UniversalCleaner.exe /R rootDirectory [/L localisationResources] [/S styleResources] [/LI properties] [/I imageFolders] [/IE imageExtensions] [/B]");
             Console.WriteLine();
             var messages = new Dictionary<string, string>
             {
                 { "/R rootDirectory", "Path to the root folder to search from." },
                 { "/L localisationResources", "Enables finding of unused localisation keys. localisationResources is a comma seperated list of resw files used for localisation." },
+                { "/LI", $"When used with /L, provides a comma seperated list of properties to assume are used elsewhere and thus ignored. Default properties are: {CommaSeperated(XamlKeys.DefaultIgnoreProperties)}" },
                 { "/S styleResources", "Enables finding of unused files. styleResources is a comma seperated list of xaml files used for styles." },
-                { "/B", "Beep when done." },
-                { "/LI", "When used with /L, provides a comma seperated list of properties to assume are used elsewhere." }
+                { "/I", "Enables searching for unused images. imageFolders is a comma seperate list of folders to look in." },
+                { "/IE", $"When used with /I, provides a comma seperated list of file extensions to consider an image. Default extensions are: {CommaSeperated(Images.DefaultExtensions)}" },
+                { "/IR", "When used with /I, instructs the tool to check in the image folder and all sub-folders." },
+                { "/IIR", "When used with /I AND /L, instructs the tool to check for image use in location resources as well as XAML." },
+                { "/B", "Beep when done." }
             };
 
             WriteAlignedMessages(messages);
@@ -210,9 +267,19 @@
         {
             public bool Beep { get; set; }
 
+            public bool CleanImages { get; internal set; }
+
             public bool CleanLocalisations { get; set; }
 
             public bool CleanStyles { get; set; }
+
+            public string[] ImageExtensions { get; internal set; }
+
+            public string[] ImageFolders { get; internal set; }
+
+            public bool ImageRecurse { get; internal set; }
+
+            public bool ImageSearchInResources { get; internal set; }
 
             public string[] LocalisationPropertiesToIgnore { get; set; }
 

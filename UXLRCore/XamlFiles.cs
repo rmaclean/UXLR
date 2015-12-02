@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
 
     public static class XamlFiles
     {
@@ -19,8 +20,9 @@
             return xamlFiles;
         }
 
-        public static void Search(IEnumerable<FileInfo> xamlFiles, IEnumerable<SearchContent> searchQueries)
+        public static IEnumerable<SearchContent> Search(IEnumerable<FileInfo> xamlFiles, IEnumerable<SearchContent> searchQueries)
         {
+            var input = new List<SearchContent>(searchQueries);
             foreach (var xamlFile in xamlFiles)
             {
                 var content = "";
@@ -29,15 +31,26 @@
                     content = xamlContent.ReadToEnd();
                 }
 
-                foreach (var searchQuery in searchQueries)
-                {
-                    searchQuery.Found(content.Contains(searchQuery.Query()), xamlFile.FullName);
+                var contentToFind = input.ToArray();
+                foreach (var searchQuery in contentToFind)
+                {                    
+                    if (content.IndexOf(searchQuery.Query(), StringComparison.OrdinalIgnoreCase) > -1)
+                    {
+                        input.Remove(searchQuery);
+                    }
                 }
             }
+
+            return input;
         }
 
         private static void FindXamlFiles(DirectoryInfo directory, List<FileInfo> xamlFiles)
         {
+            if (directory.Name.Equals("bin", StringComparison.OrdinalIgnoreCase) || directory.Name.Equals("obj", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             foreach (var file in directory.EnumerateFiles("*.xaml"))
             {
                 xamlFiles.Add(file);

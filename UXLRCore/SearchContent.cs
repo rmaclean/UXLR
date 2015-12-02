@@ -2,11 +2,13 @@
 {
     using System;
 
+    [Flags]
     public enum SearchContentType
     {
-        StyleKey,
-        BasedOnStyle,
-        ResourceID
+        StyleKey = 1,
+        BasedOnStyle = 2,
+        ResourceID = 4,
+        Image = 8
     }
 
     public class SearchContent
@@ -17,11 +19,7 @@
             ContentType = contentType;
         }
 
-        public bool ContentFound { get; private set; }
-
         public SearchContentType ContentType { get; }
-
-        public string FileName { get; private set; }
 
         public string Raw { get; }
 
@@ -36,16 +34,13 @@
                     return $"BasedOn=\"{{StaticResource {Raw}}}\"";
 
                 case SearchContentType.ResourceID:
-                    return $"x:uid=\"{Raw}\"";
+                    return $"x:Uid=\"{Raw}\"";
+
+                case SearchContentType.Image:
+                    return Raw;
             }
 
             throw new Exception();
-        }
-
-        internal void Found(bool found, string fileName)
-        {
-            ContentFound = found;
-            FileName = fileName;
         }
     }
 }
