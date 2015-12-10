@@ -10,9 +10,6 @@
     {
         public static int Main(string[] args)
         {
-            args = new[] { "/R", @"c:\users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\",
-                "/I", @"c:\Users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\Universal\Assets", "/IR", "/IIR",
-                "/L", @"C:\Users\v-robmc\Documents\Projects\Bambisa.UI.AppFactory\Bambisa\Universal\l10n\en\Resources.resw" };
             Console.WriteLine("UXLR");
             Console.WriteLine(" \"Clean up your room\" - your Mom");
             var config = new RunConfig();
